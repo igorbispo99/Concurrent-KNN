@@ -31,17 +31,7 @@ const size_t N_LABELS = 10;
 /****/
 
 // Número de threads
-const size_t N_THREADS = 1;
-
-// Vetor em que serão salvos os resultados de execução de cada thread
-size_t* LABELS_THREADS;
-
-// Índice da última adição no vetor LABELS_THREADS
-size_t LABEL_IDX;
-
-// Mutex de acesso/modificação do vetor LABELS_THREADS
-pthread_mutex_t LOCK_LABELS = PTHREAD_MUTEX_INITIALIZER;
-
+const size_t N_THREADS = 8;
 
 /* Este vetor armazenará quais as fronteiras do vetor de amostras de treino cada
  thread do KNN executará
@@ -53,7 +43,7 @@ int** TRAIN_THREAD_BOUNDS;
  */
 int** TEST_THREAD_BOUNDS;
 
-// Estrutura que será passada para função thread_knn_predict
+// Estrutura que será passada como argumento para as funções thread_knn_predict e paralel KNN
 typedef struct {
     int* sample;
     int** x_train;
@@ -128,6 +118,12 @@ int load_csv(int*** x, int** y, const char* file_path, int n_samples) {
     return 0;
 }
 
+void free_memory(int** ptr, size_t n) {
+    for (size_t i = 0; i < n; i++)
+        free(ptr[i]);
+    free(ptr);
+}
+
 /******** FIM Rotinas de IO ********/
 
 /******** Rotinas Aux. KNN ********/
@@ -187,10 +183,10 @@ double evaluate_acc(int* y_test, size_t* y_pred, int size) {
 
     Todas as threads receberão uma fronteira do mesmo tamanho, exceto a última
     que pode receber uma fronteira maior caso o tamanho "size" do vetor não seja
-    divisível por N_THREADS
+    divisível por N_THREADS.
 
-    O resultado retornado será uma matriz cujo as linhas são uma a duplea (low, high)
-    Em que "low" é o limite inferior da fronteira e "high" é o limite superior
+    O resultado retornado será uma matriz cujo as linhas uma dupla com o formato (low, high)
+    Em que "low" é o limite inferior da fronteira e "high" é o limite superior.
 */
 int** calculate_thread_bounds(int size) {
     int** bounds = malloc(sizeof(int*) * size);
@@ -215,7 +211,7 @@ int** calculate_thread_bounds(int size) {
 
 /* 
   Esta função roda uma instância do KNN entre as fronteiras arg->low_lim e arg->upper_lim 
-  da matriz arg->x_train e do vetor arg->y_train.
+  da matriz arg->x_train e do vetor arg->y_train. Classifica a amostra arg->sample.
 
   O resultado da execução será salvo em arg->labels_thread na posição arg->label_idx e
   label_idx será incrementado em 1
@@ -239,7 +235,7 @@ void* thread_knn_predict(void* arg) {
     }
 
     // Ordenando vetor de vizinhos "neighbors" usando com referência "distances"
-    // São ordenadas apenas as primeiras "n_neighbors" posições para evitar cálculos desnecessários
+    // São ordenadas apenas as primeiras "arg->n_neighbors" posições para evitar cálculos desnecessários
     partial_key_sort(distances, neighbors, v_size, params->k_neighbors);
 
     // Calculando o histograma de labels dos k_neighbors vizinhos 
@@ -275,8 +271,8 @@ void* thread_knn_predict(void* arg) {
   Cada uma das threads executará o algoritmo entre as fronteiras
   estabelecidas no vetor TRAIN_THREAD_BOUNDS
 
-  Os valores de cada thread serão salvos em knn_threads e depois será feito uma "votação"
-  para determinar o valor final do classificador
+  Os valores de cada thread serão salvos em args->labels_threads e depois será feita
+  uma "votação" para determinar o valor final do classificador
 
 */
 
@@ -298,19 +294,24 @@ size_t paralel_knn_predict(int* x, int** x_train, int* y_train, int k_neighbors)
     // Executa o algoritmo KNN sobre um subconjunto das amostras de treino
     for (int i = 0; i < N_THREADS; i++) {
         knn_arg* args = malloc(sizeof(knn_arg));
-
+	
+	// Define a amostra que será classificada pelas threads de thread_knn_predict
         args->sample = x;
+
         args->x_train = x_train;
         args->y_train = y_train;
 
+	// Define os limites do vetores x_train e y_train em que cada thread irá operar
         args->low_lim = TRAIN_THREAD_BOUNDS[i][0];
         args->upper_lim = TRAIN_THREAD_BOUNDS[i][1];
 
         args->k_neighbors = k_neighbors;
 
+	// O vetor de predições é o índice da última adição serão compartilhados entre as threads
         args->labels_threads = labels_threads;
         args->label_idx = label_idx;
 
+	// O mutex é compartilhado entre as threads
         args->lock_labels = mutex_ptr;
 
         pthread_create(&prediction_threads[i], NULL, &thread_knn_predict, args);
@@ -348,10 +349,8 @@ size_t paralel_knn_predict(int* x, int** x_train, int* y_train, int k_neighbors)
    entre as fronteiras estabelecidas no vetor TEST_THREAD_BOUNDS.
 
 
-   Os valores de predição serão salvos em params->labels_threads
+   Os valores de predição serão salvos em params->y_pred na posição da amostra de teste respectiva
 */
-
-//pthread_mutex_t LOCK_PREDICTIONS = PTHREAD_MUTEX_INITIALIZER;
 
 void* paralel_knn(void* arg) {
     knn_arg* params = (knn_arg*) arg;
@@ -386,7 +385,7 @@ void* paralel_knn(void* arg) {
    Esta função chamará "paralel_knn" de forma concorrente em cada uma das fronteiras
    estabelecidas no vetor TEST_THREAD_BOUNDS.
 
-   O resultado da execução de "paralel_knn" será atualizado no vetor "y_pred"
+   O resultado da execução de "paralel_knn" será atualizado no vetor "y_pred" por "paralel_knn"
 */
 
 size_t* knn_classifier(int** x_train, int* y_train, int** x_test, int n_samples, int k_neighbors) {
@@ -404,8 +403,11 @@ size_t* knn_classifier(int** x_train, int* y_train, int** x_test, int n_samples,
         args->x_train = x_train;
         args->y_train = y_train;
         args->x_test = x_test;
+
+	// Vetor em que será salvo as predições feitas por paralel_knn
         args->y_pred = y_pred;
 
+	// Define os limites de operação de cada thread de paralel_knn
         args->low_lim = TEST_THREAD_BOUNDS[i][0];
         args->upper_lim = TEST_THREAD_BOUNDS[i][1];
 
@@ -452,4 +454,18 @@ int main() {
     double acc = evaluate_acc(y_test, y_pred, TEST_SAMPLES);
 
     printf("Acurácia obtida: %lf%%\n.", acc * 100);
+
+
+    // Liberando memória
+    free_memory(x_train, TRAIN_SAMPLES);
+
+    free_memory(x_test, TEST_SAMPLES);
+
+    free(y_train);
+    free(y_test);
+
+    free_memory(TRAIN_THREAD_BOUNDS, N_THREADS);
+    free_memory(TEST_THREAD_BOUNDS, N_THREADS);
+
+
 }
