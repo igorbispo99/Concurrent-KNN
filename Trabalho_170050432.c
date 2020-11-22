@@ -86,10 +86,7 @@ int load_csv(int*** x, int** y, const char* file_path, int n_samples) {
 
     FILE* file = fopen(file_path, "r");
 
-    if (!file) {
-        printf("Não foi possível carregar o arquivo de entrada %s\n", file_path);
-        return -1;
-    }
+    if (!file) return -1;
 
     size_t buff_size = 8192;
     char* buffer = calloc(buff_size, 1);
@@ -379,6 +376,8 @@ void* paralel_knn(void* arg) {
 
     
     printf("\tThread finalizada em %lf s\n", (double) elapsed);
+    
+    pthread_exit(0);
 }
 
 /* 
@@ -438,10 +437,16 @@ int main() {
     int* y_test;
 
     // Carrega o arquivo csv com as amostras de treino
-    load_csv(&x_train, &y_train, DATA_TRAIN, TRAIN_SAMPLES);
+    if (load_csv(&x_train, &y_train, DATA_TRAIN, TRAIN_SAMPLES) == -1) {
+    	printf("Não foi possível carregar o arquivo %s como entrada\n", DATA_TRAIN);
+    	return -1;
+    }
 
     // Carrega o arquivo csv com as amostras de test
-    load_csv(&x_test, &y_test, DATA_TEST, TEST_SAMPLES);
+    if (load_csv(&x_test, &y_test, DATA_TEST, TEST_SAMPLES) == -1) {
+    	printf("Não foi possível carregar o arquivo %s como entrada\n", DATA_TRAIN);
+    	return -1;
+    }
 
     // Inicializa os valores de fronteira do vetor de treino que cada thread acessará no KNN
     TRAIN_THREAD_BOUNDS = calculate_thread_bounds(TRAIN_SAMPLES);
