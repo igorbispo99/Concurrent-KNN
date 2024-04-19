@@ -1,13 +1,13 @@
 # Concurrent-KNN
 
-Implementação concorrente do algoritmo KNN em linguagem C usando biblioteca Pthreads.
+Concurrent implementation of the KNN algorithm in C language using the Pthreads library.
 
-O algoritmo espera dois arquivos .csv, um correspondente a base de dados de treinamento e outro correspondente a base de teste.
+The algorithm expects two .csv files, one corresponding to the training database and the other corresponding to the test database.
 
-O caminho dos arquivos é definido pelas variávels DATA_TRAIN e DATA_TEST (linhas 21 e 25 do arquivo Trabalho_170050432.c);
+The file path is defined by the variables DATA_TRAIN and DATA_TEST (lines 21 and 25 of the file Trabalho_170050432.c);
 
-O número de amostras de treino e de teste é definido pelas variáveis TRAIN_SAMPLES e TEST_SAMPLES (linhas 22 e 26 o arquivo Trabalho_170050432.c), respectivamente.
+The number of training and test samples is defined by the TRAIN_SAMPLES and TEST_SAMPLES variables (lines 22 and 26 of the Job_170050432.c file), respectively.
 
-O número de rótulos do dataset é definido por N_LABELS, na linha 29.
+The number of labels in the dataset is defined by N_LABELS, in line 29.
 
-Por padrão, o algoritmo rodará em 8 threads, esse valor pode ser mudado modificando o valor da variável N_THREADS na linha 34.
+By default, the algorithm will run in 8 threads, this value can be changed by modifying the value of the N_THREADS variable in line 34.
